@@ -18,11 +18,6 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
-try:
-    from langchain.retrievers import EnsembleRetriever
-except (ImportError, ModuleNotFoundError):
-    from langchain.retrievers.ensemble import EnsembleRetriever
-
 from config import (
     FAISS_INDEX_PATH,
     IMAGES_FOLDER,
@@ -125,23 +120,35 @@ def get_llm() -> ChatGroq:
     )
 
 
-@st.cache_resource(show_spinner="Building hybrid search index...")
-def build_ensemble(_vectorstore: FAISS) -> EnsembleRetriever:
-    """Level 2 — BM25 + FAISS ensemble retriever."""
-    # Extract stored docs from FAISS docstore for BM25
+@st.cache_resource(show_spinner="Building BM25 index...")
+def build_bm25(_vectorstore: FAISS) -> BM25Retriever:
+    """Level 2 — build BM25 from docs stored inside FAISS."""
     all_docs = list(_vectorstore.docstore._dict.values())
     bm25 = BM25Retriever.from_documents(all_docs, k=TOP_K_RETRIEVAL)
-    faiss_ret = _vectorstore.as_retriever(search_kwargs={"k": TOP_K_RETRIEVAL})
-    return EnsembleRetriever(
-        retrievers=[bm25, faiss_ret],
-        weights=[BM25_WEIGHT, FAISS_WEIGHT],
-    )
+    return bm25
 
 
 vectorstore = load_vectorstore()
 reranker    = load_reranker()
 llm         = get_llm()
-ensemble    = build_ensemble(vectorstore)
+bm25        = build_bm25(vectorstore)
+
+
+def hybrid_retrieve(query: str) -> list:
+    """Manual hybrid retrieval: BM25 + FAISS, deduplicated."""
+    faiss_docs = vectorstore.similarity_search(query, k=TOP_K_RETRIEVAL)
+    bm25_docs  = bm25.invoke(query)
+    seen, merged = set(), []
+    for doc in faiss_docs + bm25_docs:
+        key = (
+            doc.metadata.get("source", ""),
+            doc.metadata.get("page", ""),
+            doc.page_content[:80],
+        )
+        if key not in seen:
+            seen.add(key)
+            merged.append(doc)
+    return merged[:TOP_K_RETRIEVAL]
 
 # ── Multi-query helper (Level 3) ──────────────────────────────────────────────
 def generate_query_variants(question: str) -> list[str]:
@@ -231,7 +238,7 @@ if user_input:
         seen_ids = set()
         candidate_docs = []
         for q in queries:
-            for doc in ensemble.invoke(q):
+            for doc in hybrid_retrieve(q):
                 doc_id = (
                     doc.metadata.get("source", ""),
                     doc.metadata.get("page", ""),
