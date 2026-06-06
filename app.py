@@ -371,8 +371,10 @@ if user_input:
             response_box.markdown(full_answer + "▌")
         response_box.markdown(full_answer)
 
-        # ── Source display ────────────────────────────────────────────────────
-        if show_sources and top_docs:
+        # ── Source display — only when the LLM actually answered ─────────────
+        answered = "do not contain" not in full_answer.lower() and \
+                   "not contain" not in full_answer.lower()
+        if show_sources and top_docs and answered:
             with st.expander(f"Sources used ({len(top_docs)})"):
                 rows_html = ""
                 for i, doc in enumerate(top_docs, 1):
