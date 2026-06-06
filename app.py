@@ -260,23 +260,23 @@ _lang_instruction = {
 }
 
 SYSTEM_PROMPT = (
-    "You are a technical expert assistant specialized in Elekta Linac corrective maintenance "
-    "(beam physics, cooling systems, dosimetry, HT/RF systems, movement systems, covers, etc.).\n\n"
-    "Response rules — follow them strictly:\n\n"
-    "1. BASE YOUR ANSWER SOLELY ON THE PROVIDED CONTEXT. "
-    "   Do not add any information that is not explicitly present in the retrieved excerpts.\n"
-    "2. If the context does not contain sufficient information to answer the question, "
-    "   respond with exactly: "
-    "   'The provided documents do not contain enough information to answer this question.'\n"
-    "3. STRUCTURE every response as follows:\n"
-    "   - Direct answer: one or two sentences that directly answer the question.\n"
-    "   - Supporting details: numbered steps, values, or conditions taken verbatim or closely "
-    "     paraphrased from the document.\n"
-    "   - References: cite only the document name and page number for each claim you make. "
-    "     Do not list a source unless it directly supports a specific claim in your answer. "
-    "     If a retrieved chunk is only loosely related, omit it entirely.\n"
-    "4. Never speculate, extrapolate, or provide general engineering knowledge outside the context.\n"
-    "5. Be concise. Avoid unnecessary preamble or filler sentences.\n"
+    "You are a technical assistant for Elekta Linac corrective maintenance documentation.\n\n"
+    "STRICT RULES — violation of any rule is not acceptable:\n\n"
+    "1. Answer ONLY from the excerpts provided in the context message. "
+    "   Never use your training knowledge, never infer, never deduce, never generalise.\n"
+    "2. If the context message says no relevant excerpts were found, OR if the excerpts "
+    "   do not explicitly contain the answer, you MUST respond with this sentence only: "
+    "   'The provided documents do not contain the information needed to answer this question.' "
+    "   Do NOT attempt a partial answer. Do NOT say 'some steps can be deduced'.\n"
+    "3. FORBIDDEN words and phrases: 'deduce', 'infer', 'general', 'typically', 'usually', "
+    "   'could be', 'might be', 'it is possible', 'based on general knowledge'. "
+    "   If you find yourself writing any of these, stop and apply rule 2 instead.\n"
+    "4. When the context does contain the answer, structure your response as:\n"
+    "   - Direct answer (1–2 sentences maximum).\n"
+    "   - Numbered steps or values copied verbatim or closely paraphrased from the document.\n"
+    "   - References: document name and page number only, one per claim. "
+    "     Omit any source that does not directly support a specific sentence in your answer.\n"
+    "5. Be concise. No preamble, no filler, no repetition.\n"
     f"6. {_lang_instruction[language]}"
 )
 
@@ -305,25 +305,23 @@ if user_input:
             user_input, k=top_k
         )
 
-    # Filter: keep only chunks whose L2 distance < 1.2  (cosine sim > ~0.4)
-    # Then cap at top 3 for source display to avoid noise
-    SCORE_THRESHOLD = 1.2
+    # ── Filter by relevance score ─────────────────────────────────────────────
+    # L2 distance on normalised vectors: 0 = perfect, 2 = orthogonal
+    # Keep only chunks with L2 < 1.0  (cosine similarity > 0.5)
+    # Cap at 3 for both LLM context and UI display
+    SCORE_THRESHOLD = 1.0
     MAX_DISPLAY     = 3
 
-    filtered = [
-        (doc, score)
-        for doc, score in docs_with_scores
-        if score < SCORE_THRESHOLD
-    ]
-    # Sort ascending (lower L2 = more relevant) and keep top MAX_DISPLAY
-    filtered.sort(key=lambda x: x[1])
-    top_docs    = [d for d, _ in filtered[:MAX_DISPLAY]]
-    all_context = [d for d, _ in docs_with_scores]   # full set for LLM context
+    filtered = sorted(
+        [(doc, score) for doc, score in docs_with_scores if score < SCORE_THRESHOLD],
+        key=lambda x: x[1],
+    )
+    top_docs = [d for d, _ in filtered[:MAX_DISPLAY]]
 
-    # ── Build context message for the LLM (use full retrieved set) ───────────
-    if all_context:
+    # ── Build context message — use ONLY filtered docs for the LLM ───────────
+    if top_docs:
         ctx_parts = []
-        for d in all_context:
+        for d in top_docs:
             src  = os.path.basename(d.metadata.get("source", "unknown"))
             page = d.metadata.get("page", "?")
             ctx_parts.append(
@@ -337,8 +335,13 @@ if user_input:
             )
         )
     else:
+        # No relevant chunks found — force the LLM to say so
         context_msg = SystemMessage(
-            content="No relevant excerpts were found for this question."
+            content=(
+                "No relevant excerpts were found in the documents for this question. "
+                "You must reply with exactly: "
+                "'The provided documents do not contain the information needed to answer this question.'"
+            )
         )
 
     # ── Build full message list ───────────────────────────────────────────────
@@ -385,6 +388,6 @@ if user_input:
                             unsafe_allow_html=True,
                         )
         elif show_sources and not top_docs:
-            st.caption("No sufficiently relevant sources were identified for this query.")
+            st.caption("No relevant sources found in the indexed documents for this query.")
 
     st.session_state.messages.append(AIMessage(content=full_answer))
