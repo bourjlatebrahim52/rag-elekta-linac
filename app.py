@@ -27,7 +27,7 @@ st.set_page_config(
     page_title="Linac Elekta — Technical Assistant",
     page_icon="https://www.elekta.com/favicon.ico",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # ── Custom CSS ────────────────────────────────────────────────────────────────
@@ -106,18 +106,12 @@ st.markdown(
             color: #5d4037;
         }
 
-        /* Sidebar refinements */
-        section[data-testid="stSidebar"] {
-            background: #f7f8fa;
-            border-right: 1px solid #dde2ea;
-        }
-        section[data-testid="stSidebar"] label {
-            font-size: 0.82rem !important;
-            font-weight: 600 !important;
-            color: #374151 !important;
-            text-transform: uppercase;
-            letter-spacing: 0.4px;
-        }
+        /* Hide sidebar and its toggle button completely */
+        section[data-testid="stSidebar"]          { display: none !important; }
+        button[data-testid="stSidebarNavToggle"]   { display: none !important; }
+        button[data-testid="stSidebarCollapsedControl"] { display: none !important; }
+        #MainMenu                                  { display: none !important; }
+        footer                                     { display: none !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -194,18 +188,26 @@ with st.sidebar:
     st.caption("LangChain · FAISS · Groq · Streamlit")
 
 # ── Header ────────────────────────────────────────────────────────────────────
-st.markdown(
-    """
-    <div class="app-header">
-        <p class="app-title">Linac Elekta — Technical Maintenance Assistant</p>
-        <p class="app-subtitle">
-            Query your Elekta Linac corrective maintenance manuals.
-            Answers are grounded exclusively in the indexed documentation.
-        </p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+col_title, col_btn = st.columns([8, 1])
+with col_title:
+    st.markdown(
+        """
+        <div class="app-header">
+            <p class="app-title">Linac Elekta — Technical Maintenance Assistant</p>
+            <p class="app-subtitle">
+                Query your Elekta Linac corrective maintenance manuals.
+                Answers are grounded exclusively in the indexed documentation.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+with col_btn:
+    st.markdown("<div style='padding-top:0.6rem;'>", unsafe_allow_html=True)
+    if st.button("Clear chat", use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ── Guard: API key ────────────────────────────────────────────────────────────
 if not api_key:
