@@ -1,5 +1,6 @@
 .env
 documents/
+pdf_images/
 venv/
 __pycache__/
 *.pyc
