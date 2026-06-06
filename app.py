@@ -16,8 +16,12 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
 from langchain_community.cross_encoders import HuggingFaceCrossEncoder
-from langchain.retrievers import EnsembleRetriever
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+try:
+    from langchain.retrievers import EnsembleRetriever
+except (ImportError, ModuleNotFoundError):
+    from langchain.retrievers.ensemble import EnsembleRetriever
 
 from config import (
     FAISS_INDEX_PATH,
