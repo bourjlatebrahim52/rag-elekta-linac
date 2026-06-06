@@ -150,14 +150,37 @@ def hybrid_retrieve(query: str) -> list:
             merged.append(doc)
     return merged[:TOP_K_RETRIEVAL]
 
-# ── Multi-query helper (Level 3) ──────────────────────────────────────────────
-def generate_query_variants(question: str) -> list[str]:
-    """Ask the LLM to rephrase the question for better retrieval coverage."""
+# ── Question complexity detector ─────────────────────────────────────────────
+def is_complex_question(question: str) -> bool:
+    """Detect if a question is complex (multi-topic, multi-step)."""
+    keywords = ["and", "including", "after", "before", "also", "then",
+                "et", "ainsi", "après", "avant", "également", "puis",
+                "full", "complete", "entire", "overall", "complet"]
+    q_lower = question.lower()
+    return sum(1 for k in keywords if k in q_lower) >= 2
+
+
+# ── Question decomposition (for complex questions) ────────────────────────────
+def decompose_question(question: str) -> list[str]:
+    """Break a complex question into independent sub-questions."""
     msg = HumanMessage(content=(
-        f"You are a technical search assistant. "
-        f"Generate {MULTI_QUERY_VARIANTS} alternative phrasings of the following question "
-        f"to improve document retrieval from Elekta Linac maintenance manuals. "
-        f"Use different technical vocabulary. "
+        "You are an expert at analyzing technical maintenance questions. "
+        "Break this complex question into 3-4 simple, independent sub-questions. "
+        "Each sub-question must be answerable on its own from a maintenance manual. "
+        "Return ONLY the sub-questions, one per line, no numbering, no explanation.\n\n"
+        f"Complex question: {question}"
+    ))
+    resp = llm.invoke([msg])
+    sub_qs = [q.strip() for q in resp.content.strip().split("\n") if q.strip()]
+    return [question] + sub_qs[:4]   # original + up to 4 sub-questions
+
+
+# ── Multi-query variants (for simple questions) ───────────────────────────────
+def generate_query_variants(question: str) -> list[str]:
+    """Rephrase a simple question with different vocabulary for better retrieval."""
+    msg = HumanMessage(content=(
+        f"Generate {MULTI_QUERY_VARIANTS} alternative phrasings of this question "
+        f"using different technical vocabulary for Elekta Linac maintenance manuals. "
         f"Return ONLY the questions, one per line, no numbering.\n\n"
         f"Question: {question}"
     ))
@@ -166,16 +189,23 @@ def generate_query_variants(question: str) -> list[str]:
     return [question] + variants[:MULTI_QUERY_VARIANTS]
 
 
+# ── Smart query expansion ─────────────────────────────────────────────────────
+def expand_queries(question: str) -> list[str]:
+    """Use decomposition for complex questions, variants for simple ones."""
+    if is_complex_question(question):
+        return decompose_question(question)
+    return generate_query_variants(question)
+
+
 # ── Reranking helper (Level 2) ────────────────────────────────────────────────
 def rerank_docs(query: str, docs: list, top_n: int = TOP_K_RERANKED):
-    """Score docs with CrossEncoder and return top_n, filtering out irrelevant ones."""
+    """Score docs with CrossEncoder, return top_n relevant ones."""
     if not docs:
         return []
     pairs  = [(query, d.page_content) for d in docs]
     scores = reranker.score(pairs)
     ranked = sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)
-    # Keep only docs with a positive relevance score (ms-marco: > 0 = relevant)
-    return [(doc, score) for score, doc in ranked[:top_n] if score > -2]
+    return [(doc, score) for score, doc in ranked[:top_n] if score > -3]
 
 
 # ── System prompt ─────────────────────────────────────────────────────────────
@@ -183,16 +213,19 @@ SYSTEM_PROMPT = (
     "You are a technical assistant for Elekta Linac corrective maintenance documentation.\n\n"
     "STRICT RULES:\n"
     "1. Answer ONLY from the excerpts provided. Never use training knowledge.\n"
-    "2. If the context lacks the answer, respond ONLY with: "
+    "2. For complex multi-part questions: answer each part separately using the available context. "
+    "   Clearly label each part (e.g. 'Step 1 — Waveguide pressurization:', 'Step 2 — Dosimetry check:'). "
+    "   If one part is not in the context, say so for that part only — do not discard the entire answer.\n"
+    "3. If the context contains NO relevant information at all, respond ONLY with: "
     "   'The provided documents do not contain the information needed to answer this question.'\n"
-    "3. FORBIDDEN: 'deduce', 'infer', 'typically', 'usually', 'could be', 'might be', "
-    "   'based on general knowledge'. Using these means applying rule 2.\n"
-    "4. When the context contains the answer, structure your response:\n"
+    "4. FORBIDDEN: 'deduce', 'infer', 'typically', 'usually', 'could be', 'might be', "
+    "   'based on general knowledge'. Using these means applying rule 3.\n"
+    "5. Structure every response:\n"
     "   - Direct answer (1-2 sentences).\n"
     "   - Numbered steps or values from the document.\n"
-    "   - References: document name + page only. Omit sources not directly supporting a claim.\n"
-    "5. Be concise. No preamble. No filler.\n"
-    "6. Detect the language of the question and reply in the same language."
+    "   - References: document name + page only, one per claim.\n"
+    "6. Be concise. No preamble. No filler.\n"
+    "7. Detect the language of the question and reply in the same language."
 )
 
 # ── Session state ─────────────────────────────────────────────────────────────
@@ -229,9 +262,9 @@ if user_input:
         st.markdown(user_input)
     st.session_state.messages.append(HumanMessage(content=user_input))
 
-    # ── Level 3: Multi-query retrieval ────────────────────────────────────────
-    with st.spinner("Generating query variants..."):
-        queries = generate_query_variants(user_input)
+    # ── Level 3: Smart query expansion (decompose if complex, rephrase if simple) ─
+    with st.spinner("Analyzing question..."):
+        queries = expand_queries(user_input)
 
     # ── Level 2a: Hybrid retrieval for each variant ───────────────────────────
     with st.spinner("Searching documentation..."):

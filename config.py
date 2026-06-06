@@ -18,7 +18,7 @@ CHUNK_OVERLAP = 200
 
 # ── Retrieval — Level 2 upgrade ───────────────────────────────────────────────
 TOP_K_RETRIEVAL = 10        # docs fetched by hybrid search before reranking
-TOP_K_RERANKED  = 3         # docs kept after CrossEncoder reranking
+TOP_K_RERANKED  = 6         # docs kept after CrossEncoder reranking (increased for complex questions)
 
 # BM25 + FAISS weights in the ensemble (must sum to 1.0)
 BM25_WEIGHT  = 0.4
