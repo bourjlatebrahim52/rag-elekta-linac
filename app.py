@@ -58,11 +58,22 @@ st.markdown(
             margin-top: 0.2rem;
         }
 
-        /* Chat messages */
+        /* Chat messages — no avatars */
         .stChatMessage {
             border-radius: 6px;
             border: 1px solid #e8eaed;
             padding: 4px 8px;
+        }
+        [data-testid="chatAvatarIcon-user"],
+        [data-testid="chatAvatarIcon-assistant"],
+        .stChatMessage > div:first-child img,
+        .stChatMessage > div:first-child svg {
+            display: none !important;
+        }
+        .stChatMessage > div:first-child {
+            width: 0 !important;
+            min-width: 0 !important;
+            padding: 0 !important;
         }
 
         /* Source card — collapsed view */
