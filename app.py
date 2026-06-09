@@ -103,10 +103,39 @@ def generate_query_variants(question: str) -> list[str]:
     variants = [q.strip() for q in resp.content.strip().split("\n") if q.strip()]
     return [question] + variants[:3]
 
+def translate_to_english(question: str) -> str:
+    """Translate a French question to English for bilingual document retrieval."""
+    msg = HumanMessage(content=(
+        "Translate this Elekta Linac maintenance question to English. "
+        "Keep all technical terms, item names, fault codes, and part numbers exactly as-is. "
+        "Return ONLY the English translation, nothing else.\n\n"
+        f"Question: {question}"
+    ))
+    return llm.invoke([msg]).content.strip()
+
+def looks_french(text: str) -> bool:
+    """Simple heuristic to detect French questions."""
+    french_words = ["le ","la ","les ","du ","de ","des ","est ","que ","pour ",
+                    "comment","quoi","quelle","quelles","quel","quels","faire ",
+                    "système","défaut","surchauffe","remplacement","étapes",
+                    "après","avant","lors","lors","quand","pourquoi"]
+    return any(w in text.lower() for w in french_words)
+
 def expand_queries(question: str) -> list[str]:
+    # Standard expansion (variants or decomposition)
     if is_complex_question(question):
-        return decompose_question(question)
-    return generate_query_variants(question)
+        base = decompose_question(question)
+    else:
+        base = generate_query_variants(question)
+
+    # If question is French, also search with English translation
+    # (Elekta manuals mix French prose with English technical terms)
+    if looks_french(question):
+        english_q = translate_to_english(question)
+        all_queries = list(dict.fromkeys([question, english_q] + base))
+        return all_queries[:6]
+
+    return base
 
 def rerank_docs(query: str, docs: list, top_n: int = TOP_K_RERANKED):
     if not docs:
