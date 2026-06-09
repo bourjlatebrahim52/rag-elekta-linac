@@ -73,26 +73,35 @@ def is_complex_question(question: str) -> bool:
 
 def decompose_question(question: str) -> list[str]:
     msg = HumanMessage(content=(
-        "You are an expert at analyzing technical maintenance questions. "
+        "You are an expert at analyzing technical maintenance questions for Elekta Linac. "
+        "The maintenance manuals contain text in BOTH French and English "
+        "(technical terms, item names, and part numbers are usually in English). "
         "Break this complex question into 3-4 simple, independent sub-questions. "
+        "For each sub-question, write it in BOTH French AND English on separate lines "
+        "so retrieval works regardless of the document language. "
         "Each sub-question must be answerable on its own from a maintenance manual. "
         "Return ONLY the sub-questions, one per line, no numbering, no explanation.\n\n"
         f"Complex question: {question}"
     ))
     resp   = llm.invoke([msg])
     sub_qs = [q.strip() for q in resp.content.strip().split("\n") if q.strip()]
-    return [question] + sub_qs[:4]
+    return [question] + sub_qs[:6]
 
 def generate_query_variants(question: str) -> list[str]:
     msg = HumanMessage(content=(
-        f"Generate {MULTI_QUERY_VARIANTS} alternative phrasings of this question "
-        f"using different technical vocabulary for Elekta Linac maintenance manuals. "
-        f"Return ONLY the questions, one per line, no numbering.\n\n"
+        "The Elekta Linac maintenance manuals contain text in BOTH French and English. "
+        "Technical terms, item names, fault codes, and part numbers are usually in English "
+        "even in French sections (e.g. 'Bending OT', 'PCB DIE-RHB', 'Gun I mon'). "
+        "Generate 3 alternative phrasings of the question below:\n"
+        "  - 1 variant in French using Elekta technical vocabulary\n"
+        "  - 1 variant in English using Elekta technical vocabulary\n"
+        "  - 1 variant using exact Elekta item names or fault codes if applicable\n"
+        "Return ONLY the 3 questions, one per line, no numbering.\n\n"
         f"Question: {question}"
     ))
     resp     = llm.invoke([msg])
     variants = [q.strip() for q in resp.content.strip().split("\n") if q.strip()]
-    return [question] + variants[:MULTI_QUERY_VARIANTS]
+    return [question] + variants[:3]
 
 def expand_queries(question: str) -> list[str]:
     if is_complex_question(question):
